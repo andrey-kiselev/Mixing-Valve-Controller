@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "ESP8266-Heater-Controller",
+			"path": "."
+		}
+	],
+	"settings": {}
+}
