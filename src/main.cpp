@@ -1,26 +1,43 @@
+
 #include <Arduino.h>
 
-// #include <ESP8266WiFi.h>
+#include <DNSServer.h>
+#include <ESP8266WiFi.h>
+#include <ESPAsyncTCP.h>
 
-// #include <DNSServer.h>
-// #include <ESP8266WebServer.h>
-// #include <WiFiManager.h>
+#include "ESPAsyncWebServer.h"
 
-// #include <ArduinoHA.h>
+#include "LittleFS.h"
+
+#include "Arduino_JSON.h"
+
+#include <ArduinoHA.h>
+
+#define BROKER_ADDR     IPAddress(192,168,0,17)
+#define WIFI_SSID       "MyNetwork"
+#define WIFI_PASSWORD   "MyPassword"
 
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
 #include <QuickPID.h>
-// #include <PID_v1.h>
 
+// Setting for WiFi network
+static const char* ssid = "AndyNet";
+static const char* password = "homenetrockarfetthehe";
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+// Create an Event Source on /events
+AsyncEventSource events("/events");
+
+// Json Variable to Hold Sensor Readings
+JSONVar readings;
 
 // Motor driver
 const int pwmMotorA = D1;
 const int pwmMotorB = D2;
 const int dirMotorA = D3;
 const int dirMotorB = D4;
-int motorSpeed = 70;
 
 const int tempSensorData = D5;
 OneWire oneWire(tempSensorData);
@@ -51,6 +68,27 @@ ICACHE_RAM_ATTR void EncoderCallback(){
   if(digitalRead(encoderPinB) == 1) encoderTicks++;
   else encoderTicks--;
 }
+
+// Initialize LittleFS
+void initFS() {
+  if (!LittleFS.begin()) {
+    Serial.println("An error has occurred while mounting LittleFS");
+  }
+  Serial.println("LittleFS mounted successfully");
+}
+
+// Initialize WiFi
+void initWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi ..");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print('.');
+    delay(1000);
+  }
+  Serial.println(WiFi.localIP());
+}
+
 
 // set motor target speed
 void motorSetSpeed(float speed){
@@ -176,6 +214,15 @@ void doValveCalibration(){
 
 }
 
+
+// Get Sensor Readings and return JSON object
+String getSensorReadings(){
+  readings["temperature"] = String(Input);
+  readings["valve_pos"] = String(  100.0f*(1.0f - ((valveRightPos - valveLeftPos) - (Output - valveLeftPos)) / (2.0 * valveRightPos))  );
+  String jsonString = JSON.stringify(readings);
+  return jsonString;
+}
+
 void setup()
 {
   // WiFi.begin("AndyNet-IoT", "andynetfetthehe");
@@ -190,10 +237,47 @@ void setup()
   // Serial.println(WiFi.localIP());
 
 
+
     Serial.begin(115200);
     Serial.println("Starting...");
 
     delay(2000);
+
+  
+  initWiFi();
+  initFS();
+
+
+
+    // Web Server Root URL
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("Received / request!");
+    request->send(LittleFS, "/index.html", "text/html");
+  });
+
+
+  server.serveStatic("/", LittleFS, "/");
+  
+  // Request for the latest sensor readings
+  server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = getSensorReadings();
+    request->send(200, "application/json", json);
+    json = String();
+  });
+
+  events.onConnect([](AsyncEventSourceClient *client){
+    if(client->lastId()){
+      Serial.printf("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
+    }
+    // send event with message "hello!", id current millis
+    // and set reconnect delay to 1 second
+    client->send("hello!", NULL, millis(), 10000);
+  });
+  server.addHandler(&events);
+
+  // Start server
+  server.begin();
+
 
     pinMode(pwmMotorA, OUTPUT);
     pinMode(pwmMotorB, OUTPUT);
@@ -222,7 +306,7 @@ void setup()
     // this needs to be done first time
     sensors.requestTemperatures(); 
 
-    doValveCalibration();
+    // doValveCalibration();
 
 }
 
@@ -244,6 +328,11 @@ void loop() {
     sensors.requestTemperatures();
     Input = temperatureC;
     // Serial.println(temperatureC);
+
+    // Send Events to the client with the Sensor Readings Every 30 seconds
+    events.send("ping",NULL,millis());
+    events.send(getSensorReadings().c_str(),"new_readings" ,millis());
+
   }
 
   if (myPID.Compute()){
