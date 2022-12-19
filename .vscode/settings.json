@@ -13,6 +13,9 @@
         "stdexcept": "cpp",
         "streambuf": "cpp",
         "functional": "cpp",
-        "regex": "cpp"
+        "regex": "cpp",
+        "exception": "cpp",
+        "iosfwd": "cpp",
+        "sstream": "cpp"
     }
 }
