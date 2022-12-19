@@ -12,8 +12,8 @@
 #include <Arduino.h>
 #include <ArduinoHA.h>
 #include <Arduino_JSON.h>
-#include <ESP8266WiFi.h>
 #include <DallasTemperature.h>
+#include <ESP8266WiFi.h>
 #include <OneWire.h>
 #include <QuickPID.h>
 
@@ -25,9 +25,6 @@ WiFiClient client;
 HADevice device;
 HAMqtt mqtt(client, device);
 
-// By default HAHVAC supports only reporting of the temperature.
-// You can enable feature you need using the second argument of the constructor.
-// Please check the documentation of the HAHVAC class.
 HAHVAC hvac(
     "Norah-3000",
     HAHVAC::TargetTemperatureFeature | HAHVAC::PowerFeature | HAHVAC::ModesFeature);
@@ -51,14 +48,15 @@ float targetTemperature, currentTemperature, mixingValvePosition;
 float Kp = 0.8, Ki = 1.6, Kd = 0.1;
 
 struct {
-  float min;
-  float max;
-  bool isCalibrated;
+    float min;
+    float max;
+    bool isCalibrated;
 } mixingValveRange;
 
 QuickPID myPID(&currentTemperature, &mixingValvePosition, &targetTemperature, Kp, Ki, Kd, QuickPID::Action::direct);
 
 // PID for motor driver
+bool valveMotorEnabled = true;
 float motorSetpoint, motorInput, motorOutput;
 float mKp = 2.0, mKi = 5.0, mKd = 0.4;
 float motorPIDMaxValue = 1023.0f;
@@ -140,7 +138,7 @@ void doValveCalibration() {
     // full valve range in CPR: 64 * (100/1) * (48/16) * (1/4) = 4800
     // so, we spin the motor 20% more than that to make sure we hit the limit
 
-    long fullRangeTicks = 4800;
+    long fullRangeTicks = 4800;  // 4800;
 
     uint32_t timeout = 25000000;  // 25 sec timeout
 
@@ -166,6 +164,7 @@ void doValveCalibration() {
 
         if (motorPID.Compute()) {
             motorSetSpeed(motorOutput);
+
             speedPIDCurrentSpeed = ((float)(encoderTicks - lastMotorTicks)) / ((float)(micros() - timeLast) / 1000);
             speedMeasurements[speedMeasurementsIdx] = speedPIDCurrentSpeed;
             if (speedMeasurementsIdx++ > windowSize)
@@ -184,8 +183,8 @@ void doValveCalibration() {
             lastMotorTicks = encoderTicks;
             timeLast = micros();
 
-            Serial.print(speedPIDCurrentSpeed, 6);
-            Serial.print(" ");
+            // Serial.print(speedPIDCurrentSpeed, 6);
+            // Serial.print(" ");
             Serial.println(motorInput);
         }
     }
@@ -241,13 +240,6 @@ void doValveCalibration() {
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("Starting...");
-
-    delay(2000);
-
-    mixingValveRange.min = -1000.0;
-    mixingValveRange.max = 1000.0;
-    mixingValveRange.isCalibrated = false;
 
     // Unique ID must be set!
     byte mac[WL_MAC_ADDR_LENGTH];
@@ -263,14 +255,15 @@ void setup() {
     Serial.println();
     Serial.println("Connected to the network");
 
-    // set device's details (optional)
-    device.setName("NodeMCU");
-    device.setSoftwareVersion("1.0.0");
+    device.enableSharedAvailability();
+    device.enableLastWill();
+    device.setName("NodeMCU-Norrah3000");
+    device.setSoftwareVersion("1.0.1");
 
     // assign callbacks (optional)
     hvac.onTargetTemperatureCommand(onTargetTemperatureCommand);
     hvac.onPowerCommand(onPowerCommand);
-    // hvac.onModeCommand(onModeCommand);
+    hvac.onModeCommand(onModeCommand);
 
     // configure HVAC (optional)
     hvac.setName("Central Heating");
@@ -284,7 +277,17 @@ void setup() {
     // You can choose which modes should be available in the HA panel
     // hvac.setModes(HAHVAC::OffMode | HAHVAC::CoolMode);
 
+
     mqtt.begin(BROKER_ADDR, "norrah", "norrah");
+
+    
+
+    pinMode(tempSensorData, INPUT_PULLUP);
+    sensors.begin();
+    sensors.setWaitForConversion(false);
+    // this needs to be done first time
+    sensors.requestTemperatures();
+
 
     pinMode(pwmMotorA, OUTPUT);
     pinMode(pwmMotorB, OUTPUT);
@@ -295,11 +298,6 @@ void setup() {
     pinMode(encoderPinB, INPUT_PULLUP);
 
     attachInterrupt(encoderPinA, EncoderCallback, RISING);
-
-    pinMode(tempSensorData, INPUT_PULLUP);
-
-    sensors.begin();
-
     // Setpoint = 28.0f;
     myPID.SetOutputLimits(mixingValveRange.min, mixingValveRange.max);
     myPID.SetSampleTimeUs(10000000);
@@ -309,10 +307,10 @@ void setup() {
     motorPID.SetMode(QuickPID::Control::automatic);
     motorPID.SetProportionalMode(QuickPID::pMode::pOnMeas);
 
-    sensors.setWaitForConversion(false);
-    // this needs to be done first time
-    sensors.requestTemperatures();
 
+    mixingValveRange.min = -1000.0;
+    mixingValveRange.max = 1000.0;
+    mixingValveRange.isCalibrated = false;
     doValveCalibration();
 }
 
@@ -334,10 +332,7 @@ void loop() {
         float temperatureC = sensors.getTempCByIndex(0);
         sensors.requestTemperatures();
         currentTemperature = temperatureC;
-
         hvac.setCurrentTemperature(temperatureC);
-        // Serial.print("Temperature: ");
-        // Serial.println(temperatureC);
     }
 
     if (myPID.Compute()) {

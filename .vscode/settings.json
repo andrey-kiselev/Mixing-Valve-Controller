@@ -5,6 +5,14 @@
         "istream": "cpp",
         "iterator": "cpp",
         "numeric": "cpp",
-        "ostream": "cpp"
+        "ostream": "cpp",
+        "system_error": "cpp",
+        "random": "cpp",
+        "limits": "cpp",
+        "new": "cpp",
+        "stdexcept": "cpp",
+        "streambuf": "cpp",
+        "functional": "cpp",
+        "regex": "cpp"
     }
 }
