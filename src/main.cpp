@@ -129,7 +129,7 @@ long valveMotorSetPosition(long position, unsigned long timeout) {
         _valveMotorCurrentPosition = _encoderTicks;
 
         // break if we are very close to the desired position
-        if (abs(_valveMotorCurrentPosition - (float)position) < 50) break;
+        // if (abs(_valveMotorCurrentPosition - (float)position) < 50) break;
 
         if (_valvePIDController.Compute()) {
             motorSetSpeed(_valveMotorPWMOutput);
@@ -192,6 +192,7 @@ void onModeCommand(HAHVAC::Mode mode, HAHVAC *sender) {
         _temperaturePIDController.SetMode(QuickPID::Control::automatic);
         _valvePIDController.SetMode(QuickPID::Control::automatic);
         Serial.println("auto");
+        // ESP.restart();
     } else if (mode == HAHVAC::HeatMode) {
         _temperaturePIDController.SetMode(QuickPID::Control::manual);
         valveMotorSetPosition(_mixingValveRange.max, 5000);
@@ -244,6 +245,7 @@ void setup() {
     WiFi.macAddress(mac);
     _device.setUniqueId(mac, sizeof(mac));
 
+    // TODO: Implement timeout for WiFi connection
     // connect to wifi
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     while (WiFi.status() != WL_CONNECTED) {
@@ -345,8 +347,9 @@ void loop() {
     }
 
     if (_temperaturePIDController.Compute()) {
+        Serial.print("Temperature PID: ");
         // _valveMotorSetpoint = _mixingValvePosition;
-        valveMotorSetPosition(_mixingValvePosition, _temperaturePIDTimeStep * 0.95f);
+        valveMotorSetPosition(_mixingValvePosition, 2500);
         _valveDirectPosition.setState(_mixingValvePosition);
         Serial.println(_mixingValvePosition);
     }
